@@ -1,0 +1,830 @@
+openapi: 3.0.3
+info:
+  version: 0.0.0-dev
+  license:
+    name: MIT
+    url: https://www.mit.edu/~amini/LICENSE.md
+  description: "OAuth 2.0 authorization endpoints: token issuance (`/oauth/token`), the authorization-code consent endpoint (`/oauth/authorize`), token revocation (`/oauth/revoke`) and the administration of an account's OAuth applications (`/oauth/applications`). Supports the Authorization Code grant with PKCE (RFC 7636) so public clients (SPA / CLI / mobile) can authenticate without exposing the user's password or holding a client secret, the `client_credentials` grant for server-to-server service tokens, and the RFC 8693 token exchange that turns a partner account's service token into a token of one of its direct sub-accounts."
+  title: babelforce Auth API
+  termsOfService: https://www.babelforce.com/impressum
+  contact:
+    email: support@babelforce.com
+servers:
+  - url: https://services.babelforce.com
+    description: Production
+security:
+  - oauth2:
+      - '*'
+tags:
+  - description: OAuth 2.0 authorization, token and revocation endpoints
+    name: OAuth
+  - description: "OAuth applications of the caller's account: the client id and secret a server uses for the `client_credentials` grant, and the redirect URI used by the Authorization Code flow."
+    name: OAuthApplication
+paths:
+  /oauth/applications:
+    get:
+      description: "The OAuth applications of the caller's account, plus the partner applications available to it. A read never carries a client secret: it is shown once, by `createOAuthApplication` and `resetOAuthApplicationSecret`."
+      operationId: listOAuthApplications
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthApplicationList'
+          description: The applications.
+      summary: List the OAuth applications of your account
+      tags:
+        - OAuthApplication
+    post:
+      description: Create an OAuth application in the caller's account. Needs a person holding OWNER or MANAGER on the account, or a service token holding `account:manage` (`403 not_manager` otherwise); a service token acting in a direct sub-account creates the application there. The new application holds `scope` (default `account:manage`) and, with `account:manage`, the role MANAGER in the account, so a `client_credentials` token of it acts as a manager there. A service token cannot grant a scope its own token does not hold (`403 scope_exceeds_creator`); no application holds more than `account:manage` implies (`400 invalid_scope`). The answer carries the `client_secret` once; store it, no later read returns it.
+      operationId: createOAuthApplication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthApplicationCreateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthApplicationCreated'
+          description: The application, with its secret. The `Location` header names `/oauth/applications/{uuid}`.
+          headers:
+            Location:
+              explode: false
+              schema:
+                type: string
+              style: simple
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+          description: 'Validation failed (a missing name, label or redirect URI, or a lifetime below 1), or `invalid_scope`: a scope `account:manage` does not imply.'
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`not_manager`: the caller holds neither OWNER nor MANAGER on the account and is no service token holding `account:manage`. `scope_exceeds_creator`: a service token asked for a scope it does not hold.'
+      summary: Create an OAuth application
+      tags:
+        - OAuthApplication
+  /oauth/applications/{id}:
+    delete:
+      description: Delete an application of the caller's account; every token issued to it stops working. Needs OWNER or MANAGER on the account, or a service token holding `account:manage` (`403 not_manager`).
+      operationId: deleteOAuthApplication
+      parameters:
+        - description: The application's `id` (the `uuid` answered at creation), in its hyphenated form, exactly as the API returned it.
+          explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Deleted.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`not_manager`.'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: No such application in the caller's account.
+      summary: Delete an OAuth application
+      tags:
+        - OAuthApplication
+    get:
+      description: An application of the caller's account. Another account's application answers 404.
+      operationId: getOAuthApplication
+      parameters:
+        - description: The application's `id` (the `uuid` answered at creation), in its hyphenated form, exactly as the API returned it.
+          explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthApplicationItem'
+          description: The application, without its secret.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: No such application in the caller's account.
+      summary: Get an OAuth application
+      tags:
+        - OAuthApplication
+    post:
+      description: Change the name, label, redirect URI and homepage of an application of the caller's account. Needs OWNER or MANAGER on the account, or a service token holding `account:manage` (`403 not_manager`).
+      operationId: updateOAuthApplication
+      parameters:
+        - description: The application's `id` (the `uuid` answered at creation), in its hyphenated form, exactly as the API returned it.
+          explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthApplicationUpdateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Updated.
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Validation failed.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`not_manager`.'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: No such application in the caller's account.
+      summary: Update an OAuth application
+      tags:
+        - OAuthApplication
+  /oauth/applications/{id}/reset_secret:
+    post:
+      description: Issue a new client secret and answer it once; the old secret stops working at once. Needs OWNER on the account, or a service token holding `account:manage` (`403 not_owner`). No client token resets the secret of its own application (`403 own_application`).
+      operationId: resetOAuthApplicationSecret
+      parameters:
+        - description: The application's `id` (the `uuid` answered at creation), in its hyphenated form, exactly as the API returned it.
+          explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthApplicationSecret'
+          description: The new secret.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`not_owner` or `own_application`.'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: No such application in the caller's account.
+      summary: Reset an OAuth application's secret
+      tags:
+        - OAuthApplication
+  /oauth/applications/{id}/revoke_tokens:
+    get:
+      description: Revoke every token issued to the application in the caller's account, including tokens obtained by token exchange. Needs OWNER on the account (`403 not_allowed`). The method is GET, as the backend routes it.
+      operationId: revokeOAuthApplicationTokens
+      parameters:
+        - description: The application's `id` (the `uuid` answered at creation), in its hyphenated form, exactly as the API returned it.
+          explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Every token of the application is revoked.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`not_allowed`.'
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: No such application in the caller's account.
+      summary: End every token of an OAuth application
+      tags:
+        - OAuthApplication
+  /oauth/authorize:
+    get:
+      description: First step of the Authorization Code flow (RFC 6749 §4.1.1). The user authenticates with babelforce and approves the client; babelforce then redirects back to `redirect_uri` with a short-lived `code`. The `redirect_uri` MUST exactly match the value registered for the client. For PKCE (RFC 7636) supply `code_challenge` (and optionally `code_challenge_method`, default `S256`); public clients MUST use PKCE.
+      operationId: authorize
+      parameters:
+        - description: Must be `code` for the Authorization Code flow.
+          explode: true
+          in: query
+          name: response_type
+          required: true
+          schema:
+            enum:
+              - code
+            type: string
+          style: form
+        - explode: true
+          in: query
+          name: client_id
+          required: true
+          schema:
+            type: string
+          style: form
+        - description: Must exactly match the client's registered callback URL.
+          explode: true
+          in: query
+          name: redirect_uri
+          required: true
+          schema:
+            format: uri
+            type: string
+          style: form
+        - description: Requested scope, e.g. `*` for all access.
+          explode: true
+          in: query
+          name: scope
+          required: true
+          schema:
+            type: string
+          style: form
+        - description: Opaque value returned unchanged in the redirect; use it for CSRF protection.
+          explode: true
+          in: query
+          name: state
+          required: false
+          schema:
+            type: string
+          style: form
+        - description: PKCE code challenge (RFC 7636). Required for public clients.
+          explode: true
+          in: query
+          name: code_challenge
+          required: false
+          schema:
+            type: string
+          style: form
+        - description: PKCE transformation. `S256` is strongly recommended.
+          explode: true
+          in: query
+          name: code_challenge_method
+          required: false
+          schema:
+            default: S256
+            enum:
+              - S256
+              - plain
+            type: string
+          style: form
+      responses:
+        '200':
+          content:
+            text/html:
+              schema:
+                type: string
+          description: HTML consent page shown to the authenticated user.
+        '302':
+          description: Redirect to `redirect_uri` carrying the authorization `code` and `state` (after the user approves via `/oauth/authorize/grant`).
+          headers:
+            Location:
+              explode: false
+              schema:
+                format: uri
+                type: string
+              style: simple
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: Invalid request (e.g. `redirect_uri_mismatch`, `invalid_client`, `invalid_scope`).
+      security: []
+      summary: OAuth 2.0 authorization endpoint
+      tags:
+        - OAuth
+  /oauth/revoke:
+    post:
+      description: Revoke an access token or a refresh token. Revoking a refresh token also invalidates the access token issued with it. Per RFC 7009 §2.2 the endpoint responds `200` even for unknown or already-revoked tokens. A token issued to an application bound to an account is revoked only by that application, authenticated with HTTP Basic or with `client_id`/`client_secret`; a request from another application answers `400 invalid_grant` and the token keeps working.
+      operationId: revoke
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuthRevokeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+          description: The token is no longer valid (or was already unknown).
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: Missing `token` (`invalid_request`), or the token was issued to another application (`invalid_grant`).
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`invalid_client`: the client credentials sent are wrong.'
+      security: []
+      summary: OAuth 2.0 token revocation (RFC 7009)
+      tags:
+        - OAuth
+  /oauth/token:
+    post:
+      description: >-
+        Issues access tokens (and refresh tokens). Supported `grant_type` values: `authorization_code` (exchange a code from `/oauth/authorize`, with PKCE `code_verifier` for public clients), `refresh_token` (refresh tokens are rotated on every use — present the most recently issued one), `password` (legacy first-party only), `client_credentials` and `urn:ietf:params:oauth:grant-type:token-exchange` (RFC 8693). Which other fields are required depends on the grant; see each field's description.
+
+
+        **Service tokens (`client_credentials`).** An OAuth application of an account authenticates with its `client_id` and `client_secret`, either as HTTP Basic (`Authorization: Basic …`) or as form fields — one method per request, and never in the URL query. The token acts in the application's own account (`account_id` in the response), carries no refresh token, and lives `service_token_ttl_seconds` of the application (3600 when the application has none); a smaller `expires_in` may be requested, a larger one is capped. `scope` may name a subset of the application's scopes; an application created through `POST /oauth/applications` holds `account:manage`, which lets its token act as a manager of the account. A failed client authentication, or an application whose account is disabled, answers `401 invalid_client` with a `WWW-Authenticate: Basic` challenge.
+
+
+        **Token exchange (RFC 8693).** A partner account's application exchanges one of its own service tokens (`subject_token`, `subject_token_type=urn:ietf:params:oauth:token-type:access_token`) for a token that acts in one direct sub-account, named in `audience` by its account id or its `orgKey`. The client authenticates exactly as for `client_credentials`. The issued token carries at most the subject token's scope (narrow it with `scope`), lives no longer than the subject token, has no refresh token and cannot be exchanged again. `actor_token`, `actor_token_type` and `resource` are refused. An audience that is not a direct sub-account of the application's account answers `400 invalid_target`; a disabled sub-account answers `400 invalid_request` with `error_description: account_disabled`.
+      operationId: token
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuthTokenRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthTokenResponse'
+          description: Token issued.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: 'Invalid request — e.g. `invalid_grant` (bad/expired code, redirect_uri mismatch, failed PKCE), `invalid_request`, `invalid_scope` (a scope the application or the subject token does not hold), `invalid_target` (token exchange: the audience is no direct sub-account) or `unauthorized_client` (a public client asking for `client_credentials`).'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Error'
+          description: '`invalid_client` for `client_credentials` and the token exchange: unknown client, wrong secret, or an application whose account is disabled. Carries a `WWW-Authenticate: Basic realm="oauth"` header. The `refresh_token` grant also answers 401 for a reused, revoked or unknown refresh token, and for one past the idle or absolute lifetime its account sets (`auth/refresh-token`).'
+          headers:
+            WWW-Authenticate:
+              explode: false
+              schema:
+                type: string
+              style: simple
+      security: []
+      summary: OAuth 2.0 token endpoint
+      tags:
+        - OAuth
+components:
+  parameters:
+    OAuthApplicationId:
+      description: The application's `id` (the `uuid` answered at creation), in its hyphenated form, exactly as the API returned it.
+      explode: false
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+      style: simple
+  requestBodies: {}
+  schemas:
+    OAuth2Error:
+      example:
+        error_description: error_description
+        state: state
+        error: error
+      properties:
+        error:
+          description: RFC 6749 error code, e.g. invalid_grant, invalid_client, invalid_request.
+          type: string
+        error_description:
+          type: string
+        state:
+          description: Echoed from the request when present.
+          type: string
+      required:
+        - error
+      type: object
+    OAuthApplication:
+      example:
+        redirectUri: redirectUri
+        publicClient: true
+        clientId: clientId
+        partner: partner
+        createdBy:
+          id: id
+          type: application
+        activeTokenCount: 0
+        name: name
+        id: id
+        label: label
+        homepageUri: homepageUri
+      properties:
+        id:
+          description: The application's id (its uuid).
+          type: string
+        clientId:
+          type: string
+        label:
+          nullable: true
+          type: string
+        name:
+          type: string
+        partner:
+          description: Set on a partner or babelforce application that belongs to no account.
+          nullable: true
+          type: string
+        publicClient:
+          type: boolean
+        redirectUri:
+          nullable: true
+          type: string
+        homepageUri:
+          nullable: true
+          type: string
+        activeTokenCount:
+          description: Active tokens of the application in the caller's account.
+          format: int64
+          type: integer
+        createdBy:
+          $ref: '#/components/schemas/OAuthApplicationCreator'
+      required:
+        - clientId
+        - id
+        - name
+      type: object
+    OAuthApplicationCreateRequest:
+      example:
+        homepage_uri: https://openapi-generator.tech
+        public_client: false
+        scope: scope
+        name: name
+        label: label
+        redirect_uri: https://openapi-generator.tech
+        service_token_ttl_seconds: 1
+      properties:
+        name:
+          description: The application's name.
+          type: string
+        label:
+          description: A display label.
+          type: string
+        redirect_uri:
+          description: The callback URL of the Authorization Code flow. Required even for an application that only uses `client_credentials`.
+          format: uri
+          type: string
+        homepage_uri:
+          format: uri
+          type: string
+        public_client:
+          default: false
+          description: Register a public client (no usable secret; the Authorization Code grant is authenticated with PKCE). Public clients cannot use `client_credentials`.
+          type: boolean
+        service_token_ttl_seconds:
+          default: 3600
+          description: Lifetime of the application's service tokens, and the most a token request may ask for.
+          minimum: 1
+          type: integer
+        scope:
+          description: The scopes the application holds, space-separated; `account:manage` when absent. At most what `account:manage` implies (`api:*`, `oauth:applications:*`), and for a service token caller at most what its own token holds.
+          type: string
+      required:
+        - label
+        - name
+        - redirect_uri
+      type: object
+    OAuthApplicationCreated:
+      example:
+        roles:
+          - roles
+          - roles
+        client_secret: client_secret
+        uuid: uuid
+        client_id: client_id
+        service_token_ttl_seconds: 0
+      properties:
+        uuid:
+          description: The application's id in `/oauth/applications/{id}`.
+          type: string
+        client_id:
+          type: string
+        client_secret:
+          description: Shown once, here. No read returns it again.
+          type: string
+        roles:
+          description: "The roles the application's service tokens hold in the account: `MANAGER` with `account:manage`, none otherwise."
+          items:
+            type: string
+          type: array
+        service_token_ttl_seconds:
+          type: integer
+      required:
+        - client_id
+        - client_secret
+        - roles
+        - service_token_ttl_seconds
+        - uuid
+      type: object
+    OAuthApplicationCreator:
+      description: Who created the application; null for an application created before this was recorded.
+      example:
+        id: id
+        type: application
+      nullable: true
+      properties:
+        type:
+          description: '`application` for a service token, `user` for a person.'
+          enum:
+            - application
+            - user
+          type: string
+        id:
+          description: The creating application's or user's uuid.
+          type: string
+      required:
+        - id
+        - type
+      type: object
+    OAuthApplicationItem:
+      example:
+        application:
+          redirectUri: redirectUri
+          publicClient: true
+          clientId: clientId
+          partner: partner
+          createdBy:
+            id: id
+            type: application
+          activeTokenCount: 0
+          name: name
+          id: id
+          label: label
+          homepageUri: homepageUri
+      properties:
+        application:
+          $ref: '#/components/schemas/OAuthApplication'
+      required:
+        - application
+      type: object
+    OAuthApplicationList:
+      example:
+        items:
+          - redirectUri: redirectUri
+            publicClient: true
+            clientId: clientId
+            partner: partner
+            createdBy:
+              id: id
+              type: application
+            activeTokenCount: 0
+            name: name
+            id: id
+            label: label
+            homepageUri: homepageUri
+          - redirectUri: redirectUri
+            publicClient: true
+            clientId: clientId
+            partner: partner
+            createdBy:
+              id: id
+              type: application
+            activeTokenCount: 0
+            name: name
+            id: id
+            label: label
+            homepageUri: homepageUri
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/OAuthApplication'
+          type: array
+      required:
+        - items
+      type: object
+    OAuthApplicationSecret:
+      example:
+        client_secret: client_secret
+      properties:
+        client_secret:
+          description: The new secret, shown once.
+          type: string
+      required:
+        - client_secret
+      type: object
+    OAuthApplicationUpdateRequest:
+      example:
+        homepage_uri: https://openapi-generator.tech
+        name: name
+        label: label
+        redirect_uri: https://openapi-generator.tech
+      properties:
+        name:
+          type: string
+        label:
+          type: string
+        redirect_uri:
+          format: uri
+          type: string
+        homepage_uri:
+          format: uri
+          type: string
+      required:
+        - label
+        - name
+        - redirect_uri
+      type: object
+    OAuthRevokeRequest:
+      properties:
+        token:
+          description: The access_token or refresh_token to revoke.
+          type: string
+        token_type_hint:
+          description: Optional optimization hint (RFC 7009 §2.1).
+          enum:
+            - access_token
+            - refresh_token
+          type: string
+        client_id:
+          description: Optional; validated when supplied.
+          type: string
+        client_secret:
+          description: Required with client_id for confidential clients.
+          format: password
+          type: string
+      required:
+        - token
+      type: object
+    OAuthTokenRequest:
+      properties:
+        grant_type:
+          description: The OAuth 2.0 grant type.
+          enum:
+            - authorization_code
+            - refresh_token
+            - password
+            - client_credentials
+            - urn:ietf:params:oauth:grant-type:token-exchange
+          type: string
+        code:
+          description: '`authorization_code` only — the code returned by /oauth/authorize.'
+          type: string
+        redirect_uri:
+          description: '`authorization_code` only — must match the value used at /oauth/authorize.'
+          format: uri
+          type: string
+        code_verifier:
+          description: '`authorization_code` with PKCE (RFC 7636) — required for public clients.'
+          type: string
+        refresh_token:
+          description: '`refresh_token` only — the most recently issued refresh token (rotated each use).'
+          type: string
+        username:
+          description: "`password` only — the user's email/username."
+          type: string
+        password:
+          description: "`password` only — the user's password."
+          format: password
+          type: string
+        client_id:
+          description: Required for `authorization_code`, `client_credentials` and the token exchange, unless the client authenticates with HTTP Basic.
+          type: string
+        client_secret:
+          description: Required for confidential clients (unless sent as HTTP Basic); omitted by public clients (which use PKCE).
+          format: password
+          type: string
+        scope:
+          description: Requested scope, space-separated. For `authorization_code` the scope bound to the code always wins. For `client_credentials` a subset of the application's scopes; for the token exchange a subset of the subject token's scope.
+          type: string
+        access_type:
+          description: '`offline` (default for authorization_code) also returns a refresh_token.'
+          enum:
+            - offline
+            - online
+          type: string
+        expires_in:
+          description: "`client_credentials` with an application of an account: the requested lifetime in seconds, at most the application's `service_token_ttl_seconds`."
+          format: int64
+          type: integer
+        account_id:
+          description: "`refresh_token`: switch the refreshed token to another account the user may act in (one listed by `GET /api/v2/user/accounts`); refused otherwise. `client_credentials`: must equal the application's own account when sent."
+          type: string
+        subject_token:
+          description: Token exchange only — a service token of the authenticating application in its own account.
+          type: string
+        subject_token_type:
+          description: Token exchange only — the type of `subject_token`; only an access token is exchanged.
+          enum:
+            - urn:ietf:params:oauth:token-type:access_token
+          type: string
+        audience:
+          description: Token exchange only — the direct sub-account the issued token acts in, named by its account id (uuid) or its `orgKey`.
+          type: string
+      required:
+        - grant_type
+      type: object
+    OAuthTokenResponse:
+      example:
+        access_token: access_token
+        refresh_token: refresh_token
+        account_id: account_id
+        issued_token_type: issued_token_type
+        scope: scope
+        expire_time: 6
+        token_type: bearer
+        expires_in: 0
+        client_id: client_id
+      properties:
+        access_token:
+          type: string
+        token_type:
+          example: bearer
+          type: string
+        expires_in:
+          description: Lifetime in seconds. Omitted for non-expiring tokens.
+          format: int64
+          type: integer
+        expire_time:
+          description: The moment the token expires, in milliseconds since the epoch (UTC).
+          format: int64
+          type: integer
+        refresh_token:
+          description: Present when a refresh token was issued (rotated on every refresh). Service tokens and exchanged tokens never carry one.
+          type: string
+        scope:
+          type: string
+        client_id:
+          type: string
+        account_id:
+          description: The account a service token or an exchanged token acts in.
+          type: string
+        issued_token_type:
+          description: Token exchange only — `urn:ietf:params:oauth:token-type:access_token`.
+          type: string
+      required:
+        - access_token
+        - token_type
+      type: object
+  securitySchemes:
+    oauth2:
+      description: OAuth2 Authentication
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth/authorize
+          refreshUrl: /oauth/token
+          scopes:
+            '*': All Access
+          tokenUrl: /oauth/token
+        password:
+          refreshUrl: /oauth/token
+          scopes:
+            '*': All Access
+          tokenUrl: /oauth/token
+      type: oauth2
