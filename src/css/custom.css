@@ -1,0 +1,44 @@
+/**
+ * babelforce theme overrides for Docusaurus' classic (Infima) theme.
+ *
+ * NOTE: this is a babelforce-flavoured brand palette (a vivid royal blue) chosen to replace the
+ * generic default. Swap the hex ramp below for the official babelforce brand values when available
+ * — only these variables and the brand assets in static/img/ need to change.
+ */
+:root {
+  --ifm-color-primary: #1565ff;
+  --ifm-color-primary-dark: #0d55e8;
+  --ifm-color-primary-darker: #0c50db;
+  --ifm-color-primary-darkest: #0a42b4;
+  --ifm-color-primary-light: #3a7dff;
+  --ifm-color-primary-lighter: #4d89ff;
+  --ifm-color-primary-lightest: #84adff;
+
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --docusaurus-highlighted-code-line-bg: rgba(21, 101, 255, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #6f9bff;
+  --ifm-color-primary-dark: #4f84ff;
+  --ifm-color-primary-darker: #3f78ff;
+  --ifm-color-primary-darkest: #1659ff;
+  --ifm-color-primary-light: #8fb2ff;
+  --ifm-color-primary-lighter: #9fbeff;
+  --ifm-color-primary-lightest: #cdddff;
+
+  --ifm-background-color: #0d1a2e;
+  --ifm-background-surface-color: #12233d;
+  --docusaurus-highlighted-code-line-bg: rgba(111, 155, 255, 0.18);
+}
+
+/* Brand-tinted navbar with a subtle bottom border. */
+.navbar {
+  box-shadow: 0 1px 0 rgba(21, 101, 255, 0.12);
+}
+
+/* Slightly bolder, brand-coloured links inside article content. */
+.markdown a {
+  font-weight: 500;
+}
